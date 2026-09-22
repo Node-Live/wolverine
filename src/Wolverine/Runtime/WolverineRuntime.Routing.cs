@@ -141,7 +141,32 @@ internal class LocalRouting : IMessageRouteSource
                 endpoints.Add(batchEndpoint);
             }
 
-            return endpoints.Select(e => MessageRoute.For(messageType, e, runtime));
+            // GH-4510. A sticky-bound endpoint (Endpoint.StickyHandlers, surfaced here via
+            // DiscoverSenders' "Now do sticky assignments too" branch) is an INBOUND delivery
+            // assignment, not proof that the endpoint can act as a local SENDING target --
+            // MessageRoute.For requires building a sender (Endpoint.StartSending ->
+            // CreateSender), and some endpoint kinds structurally can never send (an Azure
+            // Service Bus subscription, for one: it has always thrown NotSupportedException
+            // from CreateSender, because a subscription has never supported being sent to).
+            // Before this repo's PrepopulateRoutingCache (6.0), that never mattered: a route
+            // for such a message type was only ever built lazily, on an actual local send
+            // attempt, which never happens for a purely sticky-delivered message. Prepopulating
+            // eagerly for every discovered message type turned a call that was never exercised
+            // in practice into one that unconditionally faults host startup. Skip a candidate
+            // that can't build a sender rather than letting it crash StartAsync.
+            return endpoints
+                .Select(e =>
+                {
+                    try
+                    {
+                        return MessageRoute.For(messageType, e, runtime);
+                    }
+                    catch (NotSupportedException)
+                    {
+                        return null;
+                    }
+                })
+                .Where(r => r is not null)!;
         }
 
         var batching = options.BatchDefinitions.FirstOrDefault(x => x.ElementType == messageType);
