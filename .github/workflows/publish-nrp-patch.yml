@@ -1,0 +1,39 @@
+name: Publish patched WolverineFx (Node-Live)
+
+# NODE-1634 / asb-sticky-handler-startup-crash: publishes ONLY the core WolverineFx
+# package (the one carrying GH-4510's patch, commit 49ccebdfa on this branch) to
+# GitHub Packages under the Node-Live org. Nothing else in this fork is patched or
+# published here — Node-Live/Backend stays on the real, unmodified public NuGet
+# packages for every other WolverineFx.* sub-package. Remove this workflow (and the
+# fork's active use) once JasperFx/wolverine#4510 ships upstream — see
+# Node-Live/Backend's openspec/changes/asb-sticky-handler-startup-crash/design.md
+# for the removal condition.
+
+on:
+  push:
+    tags:
+      - "*-nrp.*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Derive package version from the tag
+        run: echo "PACKAGE_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+
+      - name: Pack WolverineFx core only
+        run: dotnet pack src/Wolverine/Wolverine.csproj -c Release -p:PackageVersion="${PACKAGE_VERSION}" -o ./nupkg
+
+      - name: Push to GitHub Packages
+        run: dotnet nuget push "./nupkg/WolverineFx.${PACKAGE_VERSION}.nupkg" -s "https://nuget.pkg.github.com/Node-Live/index.json" -k "${{ secrets.GITHUB_TOKEN }}" --skip-duplicate
