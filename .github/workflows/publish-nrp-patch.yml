@@ -12,7 +12,7 @@ name: Publish patched WolverineFx (Node-Live)
 on:
   push:
     tags:
-      - "6.39.1-nrp.*"
+      - "*-nrp.*"
 
 jobs:
   publish:
